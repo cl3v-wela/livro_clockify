@@ -5,6 +5,7 @@ export interface TimeEntry {
   startTime: string;
   endTime: string | null;
   duration: number;
+  taskId?: string;
 }
 
 export interface Project {
@@ -12,7 +13,39 @@ export interface Project {
   color: string;
 }
 
-export type View = "timer" | "history" | "reports";
+export interface SprintTask {
+  name: string;
+  subject: string;
+  status: string;
+  priority: string;
+  sprint_assign: string;
+  project: string;
+  project_name: string;
+  module: string;
+  sprint_points: number;
+  current_assignee: string;
+  dev_assignee: string;
+  dev_assignee_name: string;
+  qa_assignee: string;
+  tech_assignee: string;
+  tech_assignee_name: string;
+  product_owner: string;
+  project_manager: string;
+  type: string;
+  devops_status: string;
+  code_review_status: string;
+  date_assigned: string;
+  exp_start_date: string;
+  exp_end_date: string;
+  completed_by: string;
+  completed_on: string;
+  product_backlogs: string;
+  parent_task: string;
+  modified: string;
+  creation: string;
+}
+
+export type View = "tasks" | "history" | "reports";
 
 export interface UserInfo {
   fullName: string;

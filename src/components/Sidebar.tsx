@@ -1,5 +1,12 @@
 import { memo, useMemo } from "react";
-import { BarChart3, History, LogOut, Timer, User } from "lucide-react";
+import {
+  BarChart3,
+  ClipboardList,
+  History,
+  LogOut,
+  Timer,
+  User,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -20,7 +27,7 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS: { view: View; label: string; icon: typeof Timer }[] = [
-  { view: "timer", label: "Timer", icon: Timer },
+  { view: "tasks", label: "Tasks", icon: ClipboardList },
   { view: "history", label: "History", icon: History },
   { view: "reports", label: "Reports", icon: BarChart3 },
 ] as const;

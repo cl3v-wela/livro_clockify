@@ -1,70 +1,83 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Check,
-  ChevronsUpDown,
+  AlertCircle,
+  Clock,
+  Filter,
   Loader2,
-  Pause,
   Play,
-  RotateCcw,
+  RefreshCw,
   Search,
-  Square,
+  X,
 } from "lucide-react";
-import { v4 as uuid } from "uuid";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useTimer } from "@/hooks/useTimer";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { apiGet } from "@/lib/api";
-import { takeScreenshot } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
-import type { Project, TimeEntry } from "@/types";
-
-interface SprintTask {
-  name: string;
-  subject: string;
-  status?: string;
-  project?: string;
-}
+import type { UseTimerReturn } from "@/hooks/useTimer";
+import type { Project, SprintTask } from "@/types";
 
 interface TimerViewProps {
   projects: Project[];
-  onSave: (entry: TimeEntry) => void;
+  timer: UseTimerReturn;
+  activeTask: SprintTask | null;
+  onTimerStart: (task: SprintTask) => void;
 }
 
-const TIME_UNITS = [
-  { label: "hrs" },
-  { label: "min" },
-  { label: "sec" },
+const STATUS_FILTERS = [
+  "All",
+  "Open",
+  "Working",
+  "Pending Review",
+  "Overdue",
+  "Completed",
 ] as const;
+
+const STATUS_COLORS: Record<string, string> = {
+  Open: "bg-zinc-500/20 text-zinc-300",
+  Working: "bg-blue-500/20 text-blue-300",
+  "Pending Review": "bg-yellow-500/20 text-yellow-300",
+  Overdue: "bg-red-500/20 text-red-300",
+  Completed: "bg-green-500/20 text-green-300",
+  Cancelled: "bg-red-500/20 text-red-400",
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  Urgent: "bg-red-500",
+  High: "bg-orange-500",
+  Medium: "bg-yellow-500",
+  Low: "bg-blue-500",
+};
 
 function formatElapsed(ms: number) {
   const totalSeconds = Math.floor(ms / 1000);
-  return {
-    h: String(Math.floor(totalSeconds / 3600)).padStart(2, "0"),
-    m: String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0"),
-    s: String(totalSeconds % 60).padStart(2, "0"),
-  };
+  const h = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+  const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+  const s = String(totalSeconds % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
 }
 
-export function TimerView({ projects, onSave }: TimerViewProps) {
-  const timer = useTimer();
-  const [description, setDescription] = useState("");
-  const [selectedProject, setSelectedProject] = useState(
-    projects[0]?.name || ""
-  );
+export function TimerView({ timer, activeTask, onTimerStart }: TimerViewProps) {
   const [tasks, setTasks] = useState<SprintTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
-  const [taskOpen, setTaskOpen] = useState(false);
-  const [taskSearch, setTaskSearch] = useState("");
   const [taskError, setTaskError] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [showFilters, setShowFilters] = useState(false);
+  const [pendingStartTask, setPendingStartTask] = useState<SprintTask | null>(
+    null
+  );
+  const [confirmInput, setConfirmInput] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
   const fetchTasks = useCallback(() => {
@@ -89,329 +102,364 @@ export function TimerView({ projects, onSave }: TimerViewProps) {
   }, [fetchTasks]);
 
   const filteredTasks = useMemo(() => {
-    if (!taskSearch) return tasks;
-    const q = taskSearch.toLowerCase();
-    return tasks.filter(
-      (t) =>
-        t.subject?.toLowerCase().includes(q) ||
-        t.name?.toLowerCase().includes(q) ||
-        t.project?.toLowerCase().includes(q) ||
-        t.status?.toLowerCase().includes(q)
-    );
-  }, [tasks, taskSearch]);
+    let result = tasks;
 
-  const selectedTask = useMemo(
-    () =>
-      tasks.find((t) => t.subject === description || t.name === description),
-    [tasks, description]
-  );
+    if (statusFilter !== "All") {
+      result = result.filter((t) => t.status === statusFilter);
+    }
 
-  const handleStart = useCallback(() => {
-    timer.start();
-    takeScreenshot("start").catch(() => {});
-  }, [timer]);
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (t) =>
+          t.subject?.toLowerCase().includes(q) ||
+          t.name?.toLowerCase().includes(q) ||
+          t.project?.toLowerCase().includes(q) ||
+          t.project_name?.toLowerCase().includes(q) ||
+          t.status?.toLowerCase().includes(q)
+      );
+    }
 
-  const handleStop = useCallback(() => {
-    takeScreenshot("stop").catch(() => {});
-    const result = timer.stop();
-    const entry: TimeEntry = {
-      id: uuid(),
-      description: description.trim() || "Untitled",
-      project: selectedProject,
-      startTime: result.startTime.toISOString(),
-      endTime: result.endTime.toISOString(),
-      duration: result.duration,
-    };
-    onSave(entry);
-    setDescription("");
-  }, [timer, description, selectedProject, onSave]);
+    return result;
+  }, [tasks, search, statusFilter]);
 
-  const handleTaskSelect = useCallback(
+  const requestStart = useCallback(
     (task: SprintTask) => {
-      const val = task.subject || task.name;
-      setDescription(val);
-      setTaskOpen(false);
-      setTaskSearch("");
-      if (task.project) {
-        const match = projects.find((p) => p.name === task.project);
-        if (match) setSelectedProject(match.name);
-      }
+      if (activeTask) return;
+      setPendingStartTask(task);
+      setConfirmInput("");
     },
-    [projects]
+    [activeTask]
   );
 
-  const currentProject = projects.find((p) => p.name === selectedProject);
-  const time = formatElapsed(timer.elapsed);
-  const timeValues = [time.h, time.m, time.s];
-  const isActive = timer.isRunning || timer.elapsed > 0;
+  const confirmStart = useCallback(() => {
+    if (!pendingStartTask) return;
+    onTimerStart(pendingStartTask);
+    setPendingStartTask(null);
+    setConfirmInput("");
+  }, [pendingStartTask, onTimerStart]);
+
+  const cancelStart = useCallback(() => {
+    setPendingStartTask(null);
+    setConfirmInput("");
+  }, []);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: tasks.length };
+    for (const t of tasks) {
+      counts[t.status] = (counts[t.status] || 0) + 1;
+    }
+    return counts;
+  }, [tasks]);
+
+  const isTimerActive = activeTask !== null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-4 sm:gap-6 md:gap-8">
-      {/* Timer Ring */}
-      <div
-        className={cn(
-          "flex size-[180px] items-center justify-center rounded-full border-2 bg-card transition-all duration-300 sm:size-[220px] md:size-[260px]",
-          timer.isRunning
-            ? "border-primary shadow-[0_0_40px_oklch(0.55_0.2_275/0.3)]"
-            : "border-border"
-        )}
-        style={
-          timer.isRunning
-            ? { animation: "pulse-glow 2s ease-in-out infinite" }
-            : undefined
-        }
-      >
-        <div className="flex flex-col items-center gap-1">
-          <div className="flex items-baseline gap-1">
-            {TIME_UNITS.map((unit, i) => (
-              <div key={unit.label} className="flex items-baseline">
-                {i > 0 && (
-                  <span className="mx-0.5 pt-0.5 text-xl font-bold text-muted-foreground sm:text-2xl md:text-[28px]">
-                    :
-                  </span>
-                )}
-                <div className="flex flex-col items-center">
-                  <span className="text-2xl font-extrabold tabular-nums tracking-wide text-foreground sm:text-3xl md:text-4xl">
-                    {timeValues[i]}
-                  </span>
-                  <span className="mt-1 text-[8px] font-semibold uppercase tracking-widest text-muted-foreground sm:text-[9px]">
-                    {unit.label}
-                  </span>
-                </div>
-              </div>
-            ))}
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight">Tasks</h2>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
+            {tasksLoading
+              ? "Loading..."
+              : `${filteredTasks.length} task${
+                  filteredTasks.length !== 1 ? "s" : ""
+                }`}
+          </p>
+        </div>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-8 text-muted-foreground"
+          onClick={fetchTasks}
+          disabled={tasksLoading}
+        >
+          <RefreshCw size={15} className={cn(tasksLoading && "animate-spin")} />
+        </Button>
+      </div>
+
+      {/* Search & Filters */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              ref={searchRef}
+              placeholder="Search tasks..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
-          {timer.startTime && (
-            <span className="mt-2 text-[11px] text-muted-foreground">
-              Started{" "}
-              {timer.startTime.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </span>
+          <Button
+            size="icon"
+            variant={showFilters ? "secondary" : "ghost"}
+            className="size-9 shrink-0"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter size={15} />
+          </Button>
+        </div>
+
+        {showFilters && (
+          <div className="flex flex-wrap gap-1.5">
+            {STATUS_FILTERS.map((s) => {
+              const count = statusCounts[s] ?? 0;
+              if (s !== "All" && count === 0) return null;
+              return (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    statusFilter === s
+                      ? "border-primary/50 bg-primary/15 text-primary"
+                      : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  {s}
+                  <span className="ml-1.5 opacity-60">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Task List */}
+      {tasksLoading ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-20 text-muted-foreground">
+          <Loader2 size={24} className="animate-spin" />
+          <span className="text-sm">Loading tasks...</span>
+        </div>
+      ) : taskError ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+          <div className="flex size-12 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+            <AlertCircle size={24} />
+          </div>
+          <p className="text-sm text-muted-foreground">Failed to load tasks</p>
+          <Button size="sm" variant="outline" onClick={fetchTasks}>
+            Try Again
+          </Button>
+        </div>
+      ) : filteredTasks.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+          <div className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <Clock size={24} strokeWidth={1.5} />
+          </div>
+          <p className="text-sm font-medium text-muted-foreground">
+            {search || statusFilter !== "All"
+              ? "No matching tasks"
+              : "No tasks assigned"}
+          </p>
+          {(search || statusFilter !== "All") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("All");
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {filteredTasks.map((task) => {
+            const isActive = activeTask?.name === task.name;
+            return (
+              <TaskRow
+                key={task.name}
+                task={task}
+                isActive={isActive}
+                isTimerActive={isTimerActive}
+                timerRunning={timer.isRunning}
+                elapsed={isActive ? timer.elapsed : 0}
+                onStart={requestStart}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {/* Start Confirmation Dialog */}
+      <Dialog
+        open={pendingStartTask !== null}
+        onOpenChange={(open) => {
+          if (!open) cancelStart();
+        }}
+      >
+        <DialogContent showCloseButton={false} className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Play size={18} className="text-primary" />
+              Start Timer
+            </DialogTitle>
+            <DialogDescription>
+              Type the task ID{" "}
+              <span className="font-mono font-semibold text-foreground">
+                {pendingStartTask?.name}
+              </span>{" "}
+              to confirm.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <p className="truncate text-sm font-medium text-foreground">
+              {pendingStartTask?.subject}
+            </p>
+            <Input
+              autoFocus
+              placeholder={pendingStartTask?.name ?? "Task ID"}
+              value={confirmInput}
+              onChange={(e) => setConfirmInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" &&
+                  confirmInput === pendingStartTask?.name
+                )
+                  confirmStart();
+              }}
+              className="font-mono"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={cancelStart}>
+              Cancel
+            </Button>
+            <Button
+              disabled={confirmInput !== pendingStartTask?.name}
+              onClick={confirmStart}
+              className="gap-2"
+            >
+              <Play size={14} fill="currentColor" />
+              Start
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+interface TaskRowProps {
+  task: SprintTask;
+  isActive: boolean;
+  isTimerActive: boolean;
+  timerRunning: boolean;
+  elapsed: number;
+  onStart: (task: SprintTask) => void;
+}
+
+function TaskRow({
+  task,
+  isActive,
+  isTimerActive,
+  timerRunning,
+  elapsed,
+  onStart,
+}: TaskRowProps) {
+  const canStart = !isTimerActive;
+  const statusColor =
+    STATUS_COLORS[task.status] || "bg-zinc-500/20 text-zinc-400";
+  const priorityDot = PRIORITY_COLORS[task.priority] || "bg-zinc-500";
+
+  return (
+    <div
+      className={cn(
+        "group flex items-center gap-3 rounded-lg border px-3 py-3 transition-all",
+        isActive
+          ? "border-primary/40 bg-primary/5"
+          : "border-border bg-card hover:border-border/80 hover:bg-accent/50"
+      )}
+    >
+      {/* Priority dot */}
+      <div
+        className={cn("size-2 shrink-0 rounded-full", priorityDot)}
+        title={task.priority}
+      />
+
+      {/* Task info */}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span
+          className={cn(
+            "truncate text-sm font-medium",
+            isActive ? "text-primary" : "text-foreground"
+          )}
+        >
+          {task.subject || task.name}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="truncate text-[11px] text-muted-foreground">
+            {task.name}
+          </span>
+          {task.project_name && (
+            <>
+              <span className="text-[11px] text-border">·</span>
+              <span className="truncate text-[11px] text-muted-foreground">
+                {task.project_name}
+              </span>
+            </>
           )}
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="flex items-center gap-2.5">
-        {!timer.isRunning && timer.elapsed === 0 && (
-          <Button
-            size="lg"
-            className="gap-2 rounded-full px-8"
-            onClick={handleStart}
-          >
-            <Play size={20} fill="currentColor" />
-            Start Timer
-          </Button>
-        )}
-        {timer.isRunning && (
-          <>
-            <Button
-              size="lg"
-              className="gap-2 rounded-full bg-yellow-500 px-6 text-black hover:bg-yellow-400"
-              onClick={timer.pause}
-            >
-              <Pause size={18} />
-              Pause
-            </Button>
-            <Button
-              size="lg"
-              variant="destructive"
-              className="gap-2 rounded-full px-6"
-              onClick={handleStop}
-            >
-              <Square size={16} fill="currentColor" />
-              Stop
-            </Button>
-          </>
-        )}
-        {!timer.isRunning && timer.elapsed > 0 && (
-          <>
-            <Button
-              size="lg"
-              className="gap-2 rounded-full px-6"
-              onClick={timer.resume}
-            >
-              <Play size={18} fill="currentColor" />
-              Resume
-            </Button>
-            <Button
-              size="lg"
-              variant="destructive"
-              className="gap-2 rounded-full px-6"
-              onClick={handleStop}
-            >
-              <Square size={16} fill="currentColor" />
-              Stop
-            </Button>
-            <Button
-              size="icon-lg"
-              variant="secondary"
-              className="rounded-full"
-              onClick={timer.reset}
-            >
-              <RotateCcw size={16} />
-            </Button>
-          </>
-        )}
-      </div>
-
-      {/* Task Selection */}
-      <div
-        className={cn(
-          "flex w-full max-w-sm flex-col gap-3 px-2 transition-opacity duration-300 sm:max-w-md sm:px-0",
-          isActive ? "opacity-100" : "opacity-60 focus-within:opacity-100"
-        )}
+      {/* Status */}
+      <Badge
+        variant="ghost"
+        className={cn("shrink-0 text-[10px]", statusColor)}
       >
-        {tasksLoading ? (
-          <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
-            <Loader2 size={16} className="animate-spin" />
-            Loading tasks...
-          </div>
-        ) : tasks.length > 0 ? (
-          <div className="relative">
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={taskOpen}
-              onClick={() => setTaskOpen(!taskOpen)}
-              className="h-auto min-h-10 w-full justify-between gap-2 px-3 py-2 text-left font-normal"
-            >
-              {selectedTask ? (
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm">
-                    {selectedTask.subject || selectedTask.name}
-                  </span>
-                  {selectedTask.status && (
-                    <span className="truncate text-[11px] text-muted-foreground">
-                      {selectedTask.status}
-                      {selectedTask.project ? ` · ${selectedTask.project}` : ""}
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <span className="text-muted-foreground">
-                  What are you working on?
-                </span>
-              )}
-              <ChevronsUpDown
-                size={14}
-                className="shrink-0 text-muted-foreground"
-              />
-            </Button>
+        {task.status}
+      </Badge>
 
-            {taskOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setTaskOpen(false)}
-                />
-                <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border border-border bg-popover shadow-lg">
-                  <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-                    <Search
-                      size={14}
-                      className="shrink-0 text-muted-foreground"
-                    />
-                    <input
-                      ref={searchRef}
-                      autoFocus
-                      value={taskSearch}
-                      onChange={(e) => setTaskSearch(e.target.value)}
-                      placeholder="Search tasks..."
-                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                    />
-                  </div>
-                  <div className="custom-scrollbar max-h-60 overflow-y-auto p-1">
-                    {filteredTasks.length === 0 ? (
-                      <p className="py-4 text-center text-sm text-muted-foreground">
-                        No tasks found
-                      </p>
-                    ) : (
-                      filteredTasks.map((t) => {
-                        const val = t.subject || t.name;
-                        const isSelected = description === val;
-                        return (
-                          <button
-                            key={t.name}
-                            onClick={() => handleTaskSelect(t)}
-                            className={cn(
-                              "flex w-full items-start gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent",
-                              isSelected && "bg-accent"
-                            )}
-                          >
-                            <Check
-                              size={14}
-                              className={cn(
-                                "mt-0.5 shrink-0",
-                                isSelected
-                                  ? "text-primary opacity-100"
-                                  : "opacity-0"
-                              )}
-                            />
-                            <div className="flex min-w-0 flex-col">
-                              <span className="text-foreground">
-                                {t.subject || t.name}
-                              </span>
-                              {(t.status || t.project) && (
-                                <span className="text-[11px] text-muted-foreground">
-                                  {t.status || ""}
-                                  {t.status && t.project ? " · " : ""}
-                                  {t.project || ""}
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <Input
-              placeholder="What are you working on?"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-            {taskError && (
-              <button
-                onClick={fetchTasks}
-                className="text-xs text-muted-foreground hover:text-primary"
-              >
-                Failed to load tasks · Click to retry
-              </button>
-            )}
-          </div>
-        )}
-        <div className="flex items-center gap-2">
-          <span
-            className="size-2 shrink-0 rounded-full"
-            style={{ backgroundColor: currentProject?.color || "#888" }}
-          />
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((p) => (
-                <SelectItem key={p.name} value={p.name}>
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="size-2 rounded-full"
-                      style={{ backgroundColor: p.color }}
-                    />
-                    {p.name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      {/* Sprint points */}
+      {task.sprint_points > 0 && (
+        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+          {task.sprint_points} SP
+        </span>
+      )}
+
+      {/* Active timer display */}
+      {isActive && (
+        <span className="shrink-0 font-mono text-sm font-bold tabular-nums text-primary">
+          {formatElapsed(elapsed)}
+        </span>
+      )}
+
+      {/* Play button */}
+      {!isActive && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className={cn(
+            "size-8 shrink-0 rounded-full transition-all",
+            canStart
+              ? "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-primary/15 hover:text-primary"
+              : "cursor-not-allowed text-muted-foreground/30 opacity-0"
+          )}
+          disabled={!canStart}
+          onClick={(e) => {
+            e.stopPropagation();
+            onStart(task);
+          }}
+          title={canStart ? "Start timer" : "Stop the active timer first"}
+        >
+          <Play size={14} fill="currentColor" />
+        </Button>
+      )}
     </div>
   );
 }

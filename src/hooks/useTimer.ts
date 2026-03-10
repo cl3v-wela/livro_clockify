@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-interface UseTimerReturn {
+export interface UseTimerReturn {
   elapsed: number;
   isRunning: boolean;
   startTime: Date | null;
