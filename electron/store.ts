@@ -19,6 +19,7 @@ export interface Project {
 interface StoreSchema {
   entries: TimeEntry[];
   projects: Project[];
+  sessionCookie: string | null;
 }
 
 const defaults: StoreSchema = {
@@ -29,6 +30,7 @@ const defaults: StoreSchema = {
     { name: "Learning", color: "#43b581" },
     { name: "Meeting", color: "#faa61a" },
   ],
+  sessionCookie: null,
 };
 
 class JsonStore {

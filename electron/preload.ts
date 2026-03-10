@@ -18,4 +18,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("window:maximized-change", handler);
     return () => ipcRenderer.removeListener("window:maximized-change", handler);
   },
+
+  getSession: () => ipcRenderer.invoke("auth:get-session"),
+  openLogin: () => ipcRenderer.invoke("auth:open-login"),
+  logout: () => ipcRenderer.invoke("auth:logout"),
+  apiCall: (path: string, options?: any) =>
+    ipcRenderer.invoke("auth:api-call", path, options),
+  onAuthChange: (callback: (session: string | null) => void) => {
+    const handler = (_event: any, session: string | null) => callback(session);
+    ipcRenderer.on("auth:changed", handler);
+    return () => ipcRenderer.removeListener("auth:changed", handler);
+  },
 });

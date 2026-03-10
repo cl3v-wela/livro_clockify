@@ -1,5 +1,12 @@
 import type { TimeEntry, Project } from "../types";
 
+interface ApiResponse<T = any> {
+  ok: boolean;
+  status: number;
+  data: T;
+  error?: string;
+}
+
 interface ElectronAPI {
   getEntries: () => Promise<TimeEntry[]>;
   createEntry: (entry: TimeEntry) => Promise<TimeEntry>;
@@ -13,6 +20,12 @@ interface ElectronAPI {
   windowClose: () => void;
   windowIsMaximized: () => Promise<boolean>;
   onMaximizedChange: (callback: (maximized: boolean) => void) => () => void;
+
+  getSession: () => Promise<string | null>;
+  openLogin: () => Promise<void>;
+  logout: () => Promise<boolean>;
+  apiCall: (path: string, options?: any) => Promise<ApiResponse>;
+  onAuthChange: (callback: (session: string | null) => void) => () => void;
 }
 
 declare global {
@@ -61,4 +74,17 @@ export function windowIsMaximized() {
 }
 export function onMaximizedChange(cb: (maximized: boolean) => void) {
   return api.onMaximizedChange(cb);
+}
+
+export function getSession() {
+  return api.getSession();
+}
+export function openLogin() {
+  return api.openLogin();
+}
+export function logout() {
+  return api.logout();
+}
+export function onAuthChange(cb: (session: string | null) => void) {
+  return api.onAuthChange(cb);
 }
