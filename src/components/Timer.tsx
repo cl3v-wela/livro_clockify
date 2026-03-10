@@ -43,13 +43,16 @@ const STATUS_FILTERS = [
   "Completed",
 ] as const;
 
-const STATUS_COLORS: Record<string, string> = {
-  Open: "bg-zinc-500/20 text-zinc-300",
-  Working: "bg-blue-500/20 text-blue-300",
-  "Pending Review": "bg-yellow-500/20 text-yellow-300",
-  Overdue: "bg-red-500/20 text-red-300",
-  Completed: "bg-green-500/20 text-green-300",
-  Cancelled: "bg-red-500/20 text-red-400",
+const STATUS_VARIANTS: Record<
+  string,
+  "neutral" | "info" | "warning" | "danger" | "success"
+> = {
+  Open: "neutral",
+  Working: "info",
+  "Pending Review": "warning",
+  Overdue: "danger",
+  Completed: "success",
+  Cancelled: "danger",
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -373,8 +376,7 @@ function TaskRow({
   onStart,
 }: TaskRowProps) {
   const canStart = !isTimerActive;
-  const statusColor =
-    STATUS_COLORS[task.status] || "bg-zinc-500/20 text-zinc-400";
+  const statusVariant = STATUS_VARIANTS[task.status] || "neutral";
   const priorityDot = PRIORITY_COLORS[task.priority] || "bg-zinc-500";
 
   return (
@@ -418,10 +420,7 @@ function TaskRow({
       </div>
 
       {/* Status */}
-      <Badge
-        variant="ghost"
-        className={cn("shrink-0 text-[10px]", statusColor)}
-      >
+      <Badge variant={statusVariant} className="shrink-0 text-[10px]">
         {task.status}
       </Badge>
 

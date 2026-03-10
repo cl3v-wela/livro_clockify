@@ -8,6 +8,7 @@ import {
   User,
 } from "lucide-react";
 
+import { ModeToggle } from "@/components/mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -87,6 +88,7 @@ export const Sidebar = memo(function Sidebar({
 
       <div className="mt-auto px-1.5 pb-4 md:px-2.5">
         <Separator className="mb-3" />
+        <ModeToggle />
         {userInfo && (
           <Tooltip>
             <TooltipTrigger asChild>
