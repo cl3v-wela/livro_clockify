@@ -1,0 +1,21 @@
+appId: com.clockify.app
+productName: Clockify
+directories:
+  buildResources: build
+  output: release
+files:
+  - dist
+  - dist-electron
+mac:
+  category: public.app-category.productivity
+  target:
+    - zip
+  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+win:
+  target:
+    - nsis
+  artifactName: "${productName}-${version}-${os}.${ext}"
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
