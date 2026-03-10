@@ -1,18 +1,21 @@
-import { useState, useEffect, useCallback } from "react";
-import { TitleBar } from "./components/TitleBar";
-import { Login } from "./components/Login";
-import { Sidebar } from "./components/Sidebar";
-import { TimerView } from "./components/Timer";
-import { HistoryView } from "./components/History";
-import { ReportsView } from "./components/Reports";
-import { useEntries } from "./hooks/useEntries";
+import { useCallback, useEffect, useState } from "react";
+
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getSession, logout as ipcLogout } from "./lib/ipc";
-import type { View } from "./types";
+import { HistoryView } from "@/components/History";
+import { Login } from "@/components/Login";
+import { ReportsView } from "@/components/Reports";
+import { Sidebar } from "@/components/Sidebar";
+import { TimerView } from "@/components/Timer";
+import { TitleBar } from "@/components/TitleBar";
+import { useEntries } from "@/hooks/useEntries";
+import { getSession, logout as ipcLogout } from "@/lib/ipc";
+import { parseUserFromCookie } from "@/types";
+
+import type { UserInfo, View } from "@/types";
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [activeView, setActiveView] = useState<View>("timer");
   const { entries, projects, loading, addEntry, removeEntry, reload } =
     useEntries();
@@ -20,13 +23,17 @@ export default function App() {
   useEffect(() => {
     getSession().then((session) => {
       const isGuest = session && /user_id=Guest/i.test(session);
-      setSessionId(isGuest ? null : session);
       setAuthenticated(!!session && !isGuest);
+      if (session && !isGuest) {
+        setUserInfo(parseUserFromCookie(session));
+      }
     });
   }, []);
 
   const handleAuthenticated = useCallback(() => {
-    getSession().then(setSessionId);
+    getSession().then((session) => {
+      if (session) setUserInfo(parseUserFromCookie(session));
+    });
     setAuthenticated(true);
     reload();
   }, [reload]);
@@ -34,6 +41,7 @@ export default function App() {
   const handleLogout = useCallback(async () => {
     await ipcLogout();
     setAuthenticated(false);
+    setUserInfo(null);
   }, []);
 
   if (authenticated === null) {
@@ -55,14 +63,14 @@ export default function App() {
             <div className="size-8 animate-spin rounded-full border-2 border-border border-t-primary" />
           </div>
         ) : (
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex min-h-0 flex-1">
             <Sidebar
               activeView={activeView}
               onViewChange={setActiveView}
               onLogout={handleLogout}
-              sessionId={sessionId}
+              userInfo={userInfo}
             />
-            <main className="custom-scrollbar flex-1 overflow-y-auto bg-background p-8">
+            <main className="custom-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-background p-4 sm:p-6 md:p-8">
               {activeView === "timer" && (
                 <TimerView projects={projects} onSave={addEntry} />
               )}

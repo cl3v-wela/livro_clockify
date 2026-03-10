@@ -1,32 +1,82 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+const ALLOWED_SEND_CHANNELS = [
+  "window:minimize",
+  "window:maximize",
+  "window:close",
+] as const;
+
+const ALLOWED_INVOKE_CHANNELS = [
+  "entries:get",
+  "entries:create",
+  "entries:update",
+  "entries:delete",
+  "projects:get",
+  "projects:create",
+  "window:isMaximized",
+  "auth:get-session",
+  "auth:open-login",
+  "auth:logout",
+  "auth:api-call",
+  "screenshot:capture",
+] as const;
+
+const ALLOWED_RECEIVE_CHANNELS = [
+  "window:maximized-change",
+  "auth:changed",
+] as const;
+
+type SendChannel = (typeof ALLOWED_SEND_CHANNELS)[number];
+type InvokeChannel = (typeof ALLOWED_INVOKE_CHANNELS)[number];
+type ReceiveChannel = (typeof ALLOWED_RECEIVE_CHANNELS)[number];
+
+function safeSend(channel: SendChannel) {
+  ipcRenderer.send(channel);
+}
+
+function safeInvoke(channel: InvokeChannel, ...args: unknown[]) {
+  return ipcRenderer.invoke(channel, ...args);
+}
+
+function safeOn(
+  channel: ReceiveChannel,
+  handler: (...args: unknown[]) => void
+) {
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+}
+
 contextBridge.exposeInMainWorld("electronAPI", {
-  getEntries: () => ipcRenderer.invoke("entries:get"),
-  createEntry: (entry: any) => ipcRenderer.invoke("entries:create", entry),
-  updateEntry: (entry: any) => ipcRenderer.invoke("entries:update", entry),
-  deleteEntry: (id: string) => ipcRenderer.invoke("entries:delete", id),
-  getProjects: () => ipcRenderer.invoke("projects:get"),
-  createProject: (project: any) =>
-    ipcRenderer.invoke("projects:create", project),
+  getEntries: () => safeInvoke("entries:get"),
+  createEntry: (entry: unknown) => safeInvoke("entries:create", entry),
+  updateEntry: (entry: unknown) => safeInvoke("entries:update", entry),
+  deleteEntry: (id: string) => safeInvoke("entries:delete", id),
+  getProjects: () => safeInvoke("projects:get"),
+  createProject: (project: unknown) => safeInvoke("projects:create", project),
 
-  windowMinimize: () => ipcRenderer.send("window:minimize"),
-  windowMaximize: () => ipcRenderer.send("window:maximize"),
-  windowClose: () => ipcRenderer.send("window:close"),
-  windowIsMaximized: () => ipcRenderer.invoke("window:isMaximized"),
+  windowMinimize: () => safeSend("window:minimize"),
+  windowMaximize: () => safeSend("window:maximize"),
+  windowClose: () => safeSend("window:close"),
+  windowIsMaximized: () => safeInvoke("window:isMaximized"),
   onMaximizedChange: (callback: (maximized: boolean) => void) => {
-    const handler = (_event: any, maximized: boolean) => callback(maximized);
-    ipcRenderer.on("window:maximized-change", handler);
-    return () => ipcRenderer.removeListener("window:maximized-change", handler);
+    const handler = (_event: unknown, maximized: boolean) =>
+      callback(maximized);
+    return safeOn(
+      "window:maximized-change",
+      handler as (...args: unknown[]) => void
+    );
   },
 
-  getSession: () => ipcRenderer.invoke("auth:get-session"),
-  openLogin: () => ipcRenderer.invoke("auth:open-login"),
-  logout: () => ipcRenderer.invoke("auth:logout"),
-  apiCall: (path: string, options?: any) =>
-    ipcRenderer.invoke("auth:api-call", path, options),
+  getSession: () => safeInvoke("auth:get-session"),
+  openLogin: () => safeInvoke("auth:open-login"),
+  logout: () => safeInvoke("auth:logout"),
+  apiCall: (path: string, options?: unknown) =>
+    safeInvoke("auth:api-call", path, options),
   onAuthChange: (callback: (session: string | null) => void) => {
-    const handler = (_event: any, session: string | null) => callback(session);
-    ipcRenderer.on("auth:changed", handler);
-    return () => ipcRenderer.removeListener("auth:changed", handler);
+    const handler = (_event: unknown, session: string | null) =>
+      callback(session);
+    return safeOn("auth:changed", handler as (...args: unknown[]) => void);
   },
+
+  takeScreenshot: (label: string) => safeInvoke("screenshot:capture", label),
 });

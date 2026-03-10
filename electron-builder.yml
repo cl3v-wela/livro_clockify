@@ -6,6 +6,10 @@ directories:
 files:
   - dist
   - dist-electron
+  - .env
+extraResources:
+  - from: ".env"
+    to: ".env"
 mac:
   category: public.app-category.productivity
   target:
@@ -13,9 +17,6 @@ mac:
   artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
 win:
   target:
-    - nsis
+    - dir
+  signAndEditExecutable: false
   artifactName: "${productName}-${version}-${os}.${ext}"
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseTimerReturn {
   elapsed: number;
@@ -16,12 +16,20 @@ export function useTimer(): UseTimerReturn {
   const [isRunning, setIsRunning] = useState(false);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startedAtRef = useRef<number>(0);
-  const accumulatedRef = useRef<number>(0);
+  const startedAtRef = useRef(0);
+  const accumulatedRef = useRef(0);
+
+  const clearTick = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearTick, [clearTick]);
 
   const tick = useCallback(() => {
-    const now = Date.now();
-    setElapsed(accumulatedRef.current + (now - startedAtRef.current));
+    setElapsed(accumulatedRef.current + (Date.now() - startedAtRef.current));
   }, []);
 
   const start = useCallback(() => {
@@ -35,13 +43,10 @@ export function useTimer(): UseTimerReturn {
   }, [tick]);
 
   const pause = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    clearTick();
     accumulatedRef.current += Date.now() - startedAtRef.current;
     setIsRunning(false);
-  }, []);
+  }, [clearTick]);
 
   const resume = useCallback(() => {
     startedAtRef.current = Date.now();
@@ -50,10 +55,7 @@ export function useTimer(): UseTimerReturn {
   }, [tick]);
 
   const stop = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    clearTick();
     const endTime = new Date();
     const duration = Math.floor(
       (accumulatedRef.current +
@@ -70,18 +72,15 @@ export function useTimer(): UseTimerReturn {
     accumulatedRef.current = 0;
     setStartTime(null);
     return result;
-  }, [isRunning, startTime]);
+  }, [clearTick, isRunning, startTime]);
 
   const reset = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    clearTick();
     setElapsed(0);
     setIsRunning(false);
     setStartTime(null);
     accumulatedRef.current = 0;
-  }, []);
+  }, [clearTick]);
 
   return { elapsed, isRunning, startTime, start, pause, resume, stop, reset };
 }

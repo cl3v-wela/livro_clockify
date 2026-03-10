@@ -1,8 +1,11 @@
+import { memo, useMemo } from "react";
+import { Calendar, Clock } from "lucide-react";
 import { format, isToday, isYesterday, parseISO } from "date-fns";
-import type { TimeEntry, Project } from "../types";
-import { TimeEntryRow } from "./TimeEntryRow";
+
 import { Separator } from "@/components/ui/separator";
-import { Clock, Calendar } from "lucide-react";
+import { TimeEntryRow } from "@/components/TimeEntryRow";
+
+import type { Project, TimeEntry } from "@/types";
 
 interface HistoryViewProps {
   entries: TimeEntry[];
@@ -35,8 +38,12 @@ function totalDuration(entries: TimeEntry[]): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-export function HistoryView({ entries, projects, onDelete }: HistoryViewProps) {
-  const groups = groupByDate(entries);
+export const HistoryView = memo(function HistoryView({
+  entries,
+  projects,
+  onDelete,
+}: HistoryViewProps) {
+  const groups = useMemo(() => groupByDate(entries), [entries]);
 
   if (entries.length === 0) {
     return (
@@ -55,7 +62,7 @@ export function HistoryView({ entries, projects, onDelete }: HistoryViewProps) {
   }
 
   return (
-    <div className="max-w-[680px]">
+    <div className="mx-auto w-full max-w-[680px]">
       <div className="mb-6">
         <h2 className="text-xl font-bold tracking-tight">History</h2>
         <p className="mt-0.5 text-[13px] text-muted-foreground">
@@ -90,4 +97,4 @@ export function HistoryView({ entries, projects, onDelete }: HistoryViewProps) {
       ))}
     </div>
   );
-}
+});

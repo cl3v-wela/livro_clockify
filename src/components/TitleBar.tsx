@@ -1,20 +1,20 @@
-import { useState, useEffect } from "react";
-import { Minus, Square, X, Copy } from "lucide-react";
+import { memo, useEffect, useState } from "react";
+import { Copy, Minus, Square, X } from "lucide-react";
+
 import {
-  windowMinimize,
-  windowMaximize,
+  onMaximizedChange,
   windowClose,
   windowIsMaximized,
-  onMaximizedChange,
-} from "../lib/ipc";
+  windowMaximize,
+  windowMinimize,
+} from "@/lib/ipc";
 
-export function TitleBar() {
+export const TitleBar = memo(function TitleBar() {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
     windowIsMaximized().then(setMaximized);
-    const cleanup = onMaximizedChange(setMaximized);
-    return cleanup;
+    return onMaximizedChange(setMaximized);
   }, []);
 
   return (
@@ -59,4 +59,4 @@ export function TitleBar() {
       </div>
     </div>
   );
-}
+});

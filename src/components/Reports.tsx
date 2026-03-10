@@ -1,8 +1,10 @@
-import { useMemo } from "react";
-import { isToday, isThisWeek, parseISO } from "date-fns";
-import { Clock, CalendarDays, TrendingUp, Layers } from "lucide-react";
+import { memo, useMemo } from "react";
+import { CalendarDays, Clock, Layers, TrendingUp } from "lucide-react";
+import { isThisWeek, isToday, parseISO } from "date-fns";
+
 import { Card, CardContent } from "@/components/ui/card";
-import type { TimeEntry, Project } from "../types";
+
+import type { Project, TimeEntry } from "@/types";
 
 interface ReportsViewProps {
   entries: TimeEntry[];
@@ -24,9 +26,14 @@ interface StatCardProps {
   color: string;
 }
 
-function StatCard({ icon, value, label, color }: StatCardProps) {
+const StatCard = memo(function StatCard({
+  icon,
+  value,
+  label,
+  color,
+}: StatCardProps) {
   return (
-    <Card className="gap-0 py-0 border-border">
+    <Card className="gap-0 border-border py-0">
       <CardContent className="flex items-center gap-4 py-5">
         <div
           className="flex size-10 shrink-0 items-center justify-center rounded-[10px]"
@@ -43,9 +50,12 @@ function StatCard({ icon, value, label, color }: StatCardProps) {
       </CardContent>
     </Card>
   );
-}
+});
 
-export function ReportsView({ entries, projects }: ReportsViewProps) {
+export const ReportsView = memo(function ReportsView({
+  entries,
+  projects,
+}: ReportsViewProps) {
   const stats = useMemo(() => {
     const todayEntries = entries.filter((e) => isToday(parseISO(e.startTime)));
     const weekEntries = entries.filter((e) =>
@@ -72,7 +82,7 @@ export function ReportsView({ entries, projects }: ReportsViewProps) {
   }, [entries]);
 
   return (
-    <div className="max-w-[680px]">
+    <div className="mx-auto w-full max-w-[680px]">
       <div className="mb-6">
         <h2 className="text-xl font-bold tracking-tight">Reports</h2>
         <p className="mt-0.5 text-[13px] text-muted-foreground">
@@ -80,7 +90,7 @@ export function ReportsView({ entries, projects }: ReportsViewProps) {
         </p>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-3">
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <StatCard
           icon={<Clock size={18} />}
           value={formatHours(stats.todaySeconds)}
@@ -144,7 +154,10 @@ export function ReportsView({ entries, projects }: ReportsViewProps) {
                       <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
                         <div
                           className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${pct}%`, backgroundColor: color }}
+                          style={{
+                            width: `${pct}%`,
+                            backgroundColor: color,
+                          }}
                         />
                       </div>
                     </div>
@@ -156,4 +169,4 @@ export function ReportsView({ entries, projects }: ReportsViewProps) {
       )}
     </div>
   );
-}
+});

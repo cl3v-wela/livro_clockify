@@ -1,20 +1,19 @@
-import { useState, useEffect, useCallback } from "react";
-import { Timer, LogIn, Loader2 } from "lucide-react";
+import { memo, useCallback, useEffect, useState } from "react";
+import { Loader2, LogIn, Timer } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
-import { openLogin } from "@/lib/ipc";
+import { onAuthChange, openLogin } from "@/lib/ipc";
 
 interface LoginProps {
   onAuthenticated: () => void;
 }
 
-export function Login({ onAuthenticated }: LoginProps) {
+export const Login = memo(function Login({ onAuthenticated }: LoginProps) {
   const [waiting, setWaiting] = useState(false);
 
   useEffect(() => {
-    const cleanup = window.electronAPI.onAuthChange((session) => {
-      if (session) {
-        onAuthenticated();
-      }
+    const cleanup = onAuthChange((session) => {
+      if (session) onAuthenticated();
     });
     return cleanup;
   }, [onAuthenticated]);
@@ -69,4 +68,4 @@ export function Login({ onAuthenticated }: LoginProps) {
       </div>
     </div>
   );
-}
+});

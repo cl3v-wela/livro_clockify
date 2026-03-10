@@ -1,6 +1,6 @@
-import type { TimeEntry, Project } from "../types";
+import type { Project, TimeEntry } from "@/types";
 
-interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   ok: boolean;
   status: number;
   data: T;
@@ -24,8 +24,12 @@ interface ElectronAPI {
   getSession: () => Promise<string | null>;
   openLogin: () => Promise<void>;
   logout: () => Promise<boolean>;
-  apiCall: (path: string, options?: any) => Promise<ApiResponse>;
+  apiCall: (
+    path: string,
+    options?: Record<string, unknown>
+  ) => Promise<ApiResponse>;
   onAuthChange: (callback: (session: string | null) => void) => () => void;
+  takeScreenshot: (label: string) => Promise<string | null>;
 }
 
 declare global {
@@ -36,55 +40,39 @@ declare global {
 
 const api = window.electronAPI;
 
-export async function getEntries(): Promise<TimeEntry[]> {
-  return api.getEntries();
-}
+// --- Data ---
 
-export async function createEntry(entry: TimeEntry): Promise<TimeEntry> {
-  return api.createEntry(entry);
-}
+export const getEntries = (): Promise<TimeEntry[]> => api.getEntries();
+export const createEntry = (entry: TimeEntry): Promise<TimeEntry> =>
+  api.createEntry(entry);
+export const updateEntry = (entry: TimeEntry): Promise<TimeEntry> =>
+  api.updateEntry(entry);
+export const deleteEntry = (id: string): Promise<string> => api.deleteEntry(id);
+export const getProjects = (): Promise<Project[]> => api.getProjects();
+export const createProject = (project: Project): Promise<Project> =>
+  api.createProject(project);
 
-export async function updateEntry(entry: TimeEntry): Promise<TimeEntry> {
-  return api.updateEntry(entry);
-}
+// --- Window ---
 
-export async function deleteEntry(id: string): Promise<string> {
-  return api.deleteEntry(id);
-}
+export const windowMinimize = (): void => api.windowMinimize();
+export const windowMaximize = (): void => api.windowMaximize();
+export const windowClose = (): void => api.windowClose();
+export const windowIsMaximized = (): Promise<boolean> =>
+  api.windowIsMaximized();
+export const onMaximizedChange = (
+  cb: (maximized: boolean) => void
+): (() => void) => api.onMaximizedChange(cb);
 
-export async function getProjects(): Promise<Project[]> {
-  return api.getProjects();
-}
+// --- Auth ---
 
-export async function createProject(project: Project): Promise<Project> {
-  return api.createProject(project);
-}
+export const getSession = (): Promise<string | null> => api.getSession();
+export const openLogin = (): Promise<void> => api.openLogin();
+export const logout = (): Promise<boolean> => api.logout();
+export const onAuthChange = (
+  cb: (session: string | null) => void
+): (() => void) => api.onAuthChange(cb);
 
-export function windowMinimize() {
-  api.windowMinimize();
-}
-export function windowMaximize() {
-  api.windowMaximize();
-}
-export function windowClose() {
-  api.windowClose();
-}
-export function windowIsMaximized() {
-  return api.windowIsMaximized();
-}
-export function onMaximizedChange(cb: (maximized: boolean) => void) {
-  return api.onMaximizedChange(cb);
-}
+// --- Screenshot ---
 
-export function getSession() {
-  return api.getSession();
-}
-export function openLogin() {
-  return api.openLogin();
-}
-export function logout() {
-  return api.logout();
-}
-export function onAuthChange(cb: (session: string | null) => void) {
-  return api.onAuthChange(cb);
-}
+export const takeScreenshot = (label: string): Promise<string | null> =>
+  api.takeScreenshot(label);

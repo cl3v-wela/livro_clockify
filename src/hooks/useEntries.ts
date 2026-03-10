@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
-import type { TimeEntry, Project } from "../types";
-import * as ipc from "../lib/ipc";
+import { useCallback, useEffect, useState } from "react";
+
+import * as ipc from "@/lib/ipc";
+
+import type { Project, TimeEntry } from "@/types";
 
 export function useEntries() {
   const [entries, setEntries] = useState<TimeEntry[]>([]);
