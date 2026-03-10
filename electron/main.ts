@@ -1,16 +1,12 @@
-import {
-  app,
-  BrowserWindow,
-  desktopCapturer,
-  ipcMain,
-  session,
-} from "electron";
+import { app, BrowserWindow, ipcMain, Menu, session } from "electron";
 import fs from "fs";
 import os from "os";
 import path from "path";
 
 import { registerIpcHandlers } from "./ipc";
 import store from "./store";
+
+Menu.setApplicationMenu(null);
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -53,8 +49,33 @@ function getErpUrl(): URL {
   if (!cachedErpUrl) {
     const raw = process.env.VITE_ERP_URL || "https://stage.livro.systems";
     cachedErpUrl = new URL(raw.replace(/\/+$/, ""));
+    if (
+      cachedErpUrl.protocol !== "https:" &&
+      !process.env.VITE_DEV_SERVER_URL
+    ) {
+      throw new Error("VITE_ERP_URL must use HTTPS in production");
+    }
   }
   return cachedErpUrl;
+}
+
+// ---------------------------------------------------------------------------
+// IPC sender validation
+// ---------------------------------------------------------------------------
+
+function validateSender(frame: Electron.WebFrameMain | null): boolean {
+  if (!frame) return false;
+  try {
+    const url = new URL(frame.url);
+    if (url.protocol === "file:") return true;
+    if (process.env.VITE_DEV_SERVER_URL) {
+      const devUrl = new URL(process.env.VITE_DEV_SERVER_URL);
+      if (url.origin === devUrl.origin) return true;
+    }
+  } catch {
+    // invalid URL
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,11 +207,13 @@ const TITLEBAR_JS = `
 `;
 
 function registerAuthHandlers() {
-  ipcMain.handle("auth:get-session", () => {
+  ipcMain.handle("auth:get-session", (event) => {
+    if (!validateSender(event.senderFrame)) return null;
     return store.get("sessionCookie");
   });
 
-  ipcMain.handle("auth:open-login", () => {
+  ipcMain.handle("auth:open-login", (event) => {
+    if (!validateSender(event.senderFrame)) return;
     if (loginWindow && !loginWindow.isDestroyed()) {
       loginWindow.focus();
       return;
@@ -211,6 +234,7 @@ function registerAuthHandlers() {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: true,
         partition: loginPartition,
       },
     });
@@ -234,14 +258,16 @@ function registerAuthHandlers() {
     });
   });
 
-  ipcMain.handle("auth:set-session", (_event, cookieValue: string) => {
+  ipcMain.handle("auth:set-session", (event, cookieValue: string) => {
+    if (!validateSender(event.senderFrame)) return false;
     if (typeof cookieValue !== "string") return false;
     store.set("sessionCookie", cookieValue);
     mainWindow?.webContents.send("auth:changed", cookieValue);
     return true;
   });
 
-  ipcMain.handle("auth:logout", async () => {
+  ipcMain.handle("auth:logout", async (event) => {
+    if (!validateSender(event.senderFrame)) return false;
     store.set("sessionCookie", null);
     try {
       const loginSes = session.fromPartition("persist:login");
@@ -262,7 +288,10 @@ function registerAuthHandlers() {
 
   ipcMain.handle(
     "auth:api-call",
-    async (_event, urlPath: string, options?: Record<string, unknown>) => {
+    async (event, urlPath: string, options?: Record<string, unknown>) => {
+      if (!validateSender(event.senderFrame)) {
+        return { ok: false, status: 0, data: null, error: "Unauthorized" };
+      }
       if (typeof urlPath !== "string") {
         return { ok: false, status: 0, data: null, error: "Invalid path" };
       }
@@ -338,16 +367,16 @@ const SCREENSHOT_DIR = path.join(os.homedir(), "clockify-screenshots");
 const SAFE_LABEL_RE = /^[a-zA-Z0-9_-]+$/;
 
 function registerScreenshotHandler() {
-  ipcMain.handle("screenshot:capture", async (_event, label: string) => {
+  ipcMain.handle("screenshot:capture", async (event, label: string) => {
+    if (!validateSender(event.senderFrame)) return null;
     if (typeof label !== "string" || !SAFE_LABEL_RE.test(label)) {
       return null;
     }
 
     try {
-      if (!fs.existsSync(SCREENSHOT_DIR)) {
-        fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-      }
+      await fs.promises.mkdir(SCREENSHOT_DIR, { recursive: true });
 
+      const { desktopCapturer } = await import("electron");
       const sources = await desktopCapturer.getSources({
         types: ["screen"],
         thumbnailSize: { width: 1920, height: 1080 },
@@ -364,10 +393,9 @@ function registerScreenshotHandler() {
       const filename = `${label}-${ts}.png`;
       const filePath = path.join(SCREENSHOT_DIR, filename);
 
-      // Verify resolved path stays within the screenshot directory
       if (!filePath.startsWith(SCREENSHOT_DIR)) return null;
 
-      fs.writeFileSync(filePath, png);
+      await fs.promises.writeFile(filePath, png);
       return filePath;
     } catch {
       return null;
@@ -376,10 +404,79 @@ function registerScreenshotHandler() {
 }
 
 // ---------------------------------------------------------------------------
+// Security hardening
+// ---------------------------------------------------------------------------
+
+function setupSecurity() {
+  const isDev = !!process.env.VITE_DEV_SERVER_URL;
+  const erpOrigin = getErpUrl().origin;
+
+  const csp = isDev
+    ? [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https:",
+        `connect-src 'self' ws: wss: ${erpOrigin}`,
+        "font-src 'self' data:",
+      ].join("; ")
+    : [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "connect-src 'self'",
+        "font-src 'self' data:",
+      ].join("; ");
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [csp],
+      },
+    });
+  });
+
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      callback(
+        ["clipboard-read", "clipboard-sanitized-write"].includes(permission)
+      );
+    }
+  );
+
+  app.on("web-contents-created", (_event, contents) => {
+    contents.on("will-navigate", (event, navigationUrl) => {
+      try {
+        const parsedUrl = new URL(navigationUrl);
+        if (parsedUrl.protocol === "file:") return;
+        const allowedOrigins = [erpOrigin];
+        if (process.env.VITE_DEV_SERVER_URL) {
+          try {
+            allowedOrigins.push(
+              new URL(process.env.VITE_DEV_SERVER_URL).origin
+            );
+          } catch {}
+        }
+        if (!allowedOrigins.includes(parsedUrl.origin)) {
+          event.preventDefault();
+        }
+      } catch {
+        event.preventDefault();
+      }
+    });
+
+    contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  });
+}
+
+// ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(() => {
+  setupSecurity();
   registerIpcHandlers();
   registerAuthHandlers();
   registerScreenshotHandler();

@@ -36,6 +36,7 @@ const defaults: StoreSchema = {
 class JsonStore {
   private filePath: string;
   private data: StoreSchema;
+  private writeQueue = Promise.resolve();
 
   constructor() {
     const userDataPath = app.getPath("userData");
@@ -55,16 +56,16 @@ class JsonStore {
     return { ...defaults };
   }
 
-  private save(): void {
-    const dir = path.dirname(this.filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(
-      this.filePath,
-      JSON.stringify(this.data, null, 2),
-      "utf-8"
-    );
+  private persist(): void {
+    const json = JSON.stringify(this.data, null, 2);
+    this.writeQueue = this.writeQueue
+      .then(async () => {
+        await fs.promises.mkdir(path.dirname(this.filePath), {
+          recursive: true,
+        });
+        await fs.promises.writeFile(this.filePath, json, "utf-8");
+      })
+      .catch(() => {});
   }
 
   get<K extends keyof StoreSchema>(key: K): StoreSchema[K] {
@@ -73,7 +74,7 @@ class JsonStore {
 
   set<K extends keyof StoreSchema>(key: K, value: StoreSchema[K]): void {
     this.data[key] = value;
-    this.save();
+    this.persist();
   }
 }
 
